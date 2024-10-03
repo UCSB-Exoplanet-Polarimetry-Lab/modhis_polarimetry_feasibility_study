@@ -8,3 +8,4 @@ The primary goals of the feasibility study are to:
    - Evaluate the biases introduced by double differencing with long-exposures (5-10mins). Pick three declinations, pick three hour angle start times (for each declination)
    - Do derivatives of system with respect to the calibration terms that we need to know.
 
+Current overleaf document for the Mueller matrices of the system: https://www.overleaf.com/project/66fd6c324881bc8a75ed516e
