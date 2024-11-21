@@ -1,149 +1,95 @@
 import math
 
-def calculate_altitude(phi, delta, H):
+def calculate_altitude(phi=20.0, delta=0.0, H=0.0):
     """
-    Calculate the altitude (E) of a celestial object given the observer's latitude (phi), 
+    Calculate the altitude (E) of a celestial object given the observer's latitude (phi),
     the object's declination (delta), and the hour angle (H).
-    
+
     Parameters:
     ----------
-    phi : float
-        The latitude of the observer, in degrees.
-    delta : float
-        The declination of the target object, in degrees.
-    H : float
-        The hour angle of the target object, in degrees.
-    
+    phi : float, optional
+        Latitude of the observer in degrees (default is 20.0, approx. Mauna Kea).
+    delta : float, optional
+        Declination of the target object in degrees (default is 0.0, equatorial object).
+    H : float, optional
+        Hour angle of the target object in degrees (default is 0.0, transit time).
+
     Returns:
     -------
     E : float
-        The altitude of the target object, in degrees.
+        Altitude of the target object in degrees.
     """
-    
-    # Convert degrees to radians for trigonometric calculations
     phi_rad = math.radians(phi)
     delta_rad = math.radians(delta)
     H_rad = math.radians(H)
     
-    # Calculate sin(E) using the given formula
     sin_E = math.sin(phi_rad) * math.sin(delta_rad) + math.cos(phi_rad) * math.cos(delta_rad) * math.cos(H_rad)
-    
-    # Ensure the value is in the range [-1, 1] to avoid numerical errors with asin
-    sin_E = min(1.0, max(-1.0, sin_E))
-    
-    # Calculate the altitude (E) in radians and convert to degrees
-    E_rad = math.asin(sin_E)
-    E_deg = math.degrees(E_rad)
+    sin_E = min(1.0, max(-1.0, sin_E))  # Clamp value to avoid errors
+    E_deg = math.degrees(math.asin(sin_E))
     
     return E_deg
 
-def calculate_hour_angle(ra, observer_longitude, ut, jd_str):
-    """
-    Calculate the hour angle (H) of a celestial object given its right ascension (RA), 
-    the observer's longitude, the time of observation in UT, and the Julian Date (JD).
-
-    Parameters:
-    ----------
-    ra : float
-        The right ascension of the celestial object, in degrees.
-    observer_longitude : float
-        The longitude of the observer, in degrees (positive for east, negative for west).
-    ut : str
-        The time of observation in UT as a string in the format 'HH:MM:SS'.
-    jd_str : str
-        The Julian Date of the observation as a string.
-
-    Returns:
-    -------
-    H : float
-        The hour angle of the celestial object, in degrees.
-    """
-
-    # Convert RA from degrees to hours
+def calculate_hour_angle(ra=0.0, observer_longitude=-155.5, ut="00:00:00", jd_str="2451545.0"):
     ra_hours = ra / 15.0
-
-    # Parse UT string to get hours, minutes, and seconds
-    ut_hours, ut_minutes, ut_seconds = [int(part) for part in ut.split(":")]
+    ut_hours, ut_minutes, ut_seconds = map(int, ut.split(":"))
     ut_decimal = ut_hours + ut_minutes / 60 + ut_seconds / 3600
-
-    # Convert Julian Date from string to float
     jd = float(jd_str)
-
-    # Calculate the number of days since J2000.0 (JD for J2000.0 is 2451545.0)
-    jd_j2000 = jd - 2451545.0
-
-    # Calculate the Greenwich Sidereal Time (GST) in degrees at 0h UT
-    gst_0h = 100.46061837 + 36000.770053608 * (jd_j2000 / 36525.0)
-    gst_0h = gst_0h % 360  # Normalize to 0-360 degrees
-
-    # Update GST to the observation time in UT
-    gst = (gst_0h + 360.98564724 * (ut_decimal / 24.0)) % 360
-
-    # Convert GST from degrees to hours
-    gst_hours = gst / 15.0
-
+    
+    # Calculate Julian centuries since J2000.0
+    T = (jd - 2451545.0) / 36525.0
+    
+    # Calculate GMST at 0h UT using more precise formula
+    gmst_0h = 100.46061837 + 36000.770536 * T + 0.000387933 * T**2 - T**3 / 38710000.0
+    gmst_0h = gmst_0h % 360  # Ensure it is within 0-360 degrees
+    
+    # Calculate GMST at UT
+    gmst = gmst_0h + 360.98564736629 * (ut_decimal / 24.0)
+    gmst = gmst % 360  # Ensure it is within 0-360 degrees
+    gmst_hours = gmst / 15.0  # Convert to hours
+    
     # Calculate Local Sidereal Time (LST)
-    lst = (gst_hours + observer_longitude / 15.0) % 24
-
-    # Calculate the hour angle (in hours) and convert to degrees
+    lst = (gmst_hours + observer_longitude / 15.0) % 24
+    
+    # Calculate Hour Angle (H)
     H = (lst - ra_hours) % 24
     H_degrees = H * 15.0
-
+    
     return H_degrees
 
-def calculate_parallactic_angle(ra, dec, ut, jd_str, observer_latitude, observer_longitude):
+def calculate_parallactic_angle(ra=0.0, dec=0.0, ut="00:00:00", jd_str="2451545.0", observer_latitude=20.0, observer_longitude=-155.5, hour_angle = None):
     """
-    Calculate the parallactic angle of a celestial object given its right ascension (RA), 
-    declination (Dec), the observer's latitude, longitude, and the time of observation in UT 
-    and Julian Date (JD).
+    Calculate the parallactic angle of a celestial object given its right ascension (RA),
+    declination (Dec), observer's latitude, longitude, UT, and Julian Date (JD).
 
     Parameters:
     ----------
-    ra : float
-        The right ascension of the celestial object, in degrees.
-    dec : float
-        The declination of the celestial object, in degrees.
-    ut : str
-        The time of observation in UT as a string in the format 'HH:MM:SS'.
-    jd_str : str
-        The Julian Date of the observation as a string.
-    observer_latitude : float
-        The latitude of the observer, in degrees.
-    observer_longitude : float
-        The longitude of the observer, in degrees (positive for east, negative for west).
+    ra : float, optional
+        Right ascension of the celestial object in degrees (default is 0.0).
+    dec : float, optional
+        Declination of the celestial object in degrees (default is 0.0).
+    ut : str, optional
+        Time in UT as 'HH:MM:SS' (default is "00:00:00").
+    jd_str : str, optional
+        Julian Date as a string (default is "2451545.0", J2000).
+    observer_latitude : float, optional
+        Latitude of the observer in degrees (default is 20.0, approx. Mauna Kea).
+    observer_longitude : float, optional
+        Longitude of the observer in degrees, east positive (default is -155.5, Mauna Kea).
 
     Returns:
     -------
     q : float
-        The parallactic angle of the celestial object, in degrees.
+        Parallactic angle of the celestial object in degrees.
     """
-    
-    # Convert RA and Dec from degrees to radians
-    ra_rad = math.radians(ra)
+    if hour_angle == None:
+        H_degrees = calculate_hour_angle(ra=ra, observer_longitude=observer_longitude, ut=ut, jd_str=jd_str)
+    else:
+        H_degrees = hour_angle * 15.0
+    H_rad = math.radians(H_degrees)
+    lat_rad = math.radians(observer_latitude)
     dec_rad = math.radians(dec)
     
-    # Calculate the Hour Angle (H) using the previous hour angle function logic
-    H_degrees = calculate_hour_angle(ra, observer_longitude, ut, jd_str)
-    H_rad = math.radians(H_degrees)
-    
-    # Convert observer's latitude to radians
-    lat_rad = math.radians(observer_latitude)
-    
-    # Calculate the parallactic angle using the formula
-    sin_H = math.sin(H_rad)
-    cos_H = math.cos(H_rad)
-    tan_phi = math.tan(lat_rad)
-    cos_delta = math.cos(dec_rad)
-    sin_delta = math.sin(dec_rad)
-    
-    # Parallactic angle formula
-    tan_q = sin_H / (tan_phi * cos_delta - sin_delta * cos_H)
-    q_rad = math.atan(tan_q)
-    
-    # Convert the parallactic angle to degrees
-    q_deg = math.degrees(q_rad)
+    tan_q = math.sin(H_rad) / (math.tan(lat_rad) * math.cos(dec_rad) - math.sin(dec_rad) * math.cos(H_rad))
+    q_deg = math.degrees(math.atan(tan_q))
     
     return q_deg
-
-# You can use the calculate_hour_angle function provided earlier in the same script
-
