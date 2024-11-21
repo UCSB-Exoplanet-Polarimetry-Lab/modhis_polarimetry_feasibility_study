@@ -428,8 +428,11 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
             if observable == "intensities":
                 sub_measurements_o.append(o_intensity)
                 sub_measurements_e.append(e_intensity)
-            elif observable == "single_difference":
+            elif observable == "normalized_single_difference":
                 single_diff = (o_intensity - e_intensity) / (o_intensity + e_intensity)
+                sub_measurements.append(single_diff)
+            elif observable == "unnormalized_single_difference":
+                single_diff = (o_intensity - e_intensity)
                 sub_measurements.append(single_diff)
 
         if observable == "intensities":
@@ -437,7 +440,7 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
             intensity_e = np.sum(sub_measurements_e) if use_sum else np.mean(sub_measurements_e)
             measurements.append(intensity_o)
             measurements.append(intensity_e)
-        elif observable == "single_difference":
+        elif "single_difference" in observable:
             if sub_measurements:  # Check to ensure list isn't empty
                 single_diff_avg = np.sum(sub_measurements) if use_sum else np.mean(sub_measurements)
                 measurements.append(single_diff_avg)
@@ -459,15 +462,18 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
         if observable == "intensities":
             measurement_matrix.append(o_matrix_avg[0, :])
             measurement_matrix.append(e_matrix_avg[0, :])
-        elif observable == "single_difference":
+        elif observable == "normalized_single_difference":
             single_diff_matrix = o_matrix_avg - e_matrix_avg
             single_sum_matrix = o_matrix_avg + e_matrix_avg
-            print("single_difference_matrix ", single_sum_matrix)
-            print("single_sum_matrix ", single_sum_matrix)
+            # print("single_difference_matrix ", single_sum_matrix)
+            # print("single_sum_matrix ", single_sum_matrix)
             if single_sum_matrix[0, 0] != 0:  # Prevent division by zero
-                single_diff_matrix[0, 0] = 1
+                # single_diff_matrix[0, 0] = 1
                 single_diff_matrix[0, :] /= single_sum_matrix[0, 0]
-                measurement_matrix.append(single_diff_matrix[0, :])
+            measurement_matrix.append(single_diff_matrix[0, :])
+        elif observable == "unnormalized_single_difference":
+            single_diff_matrix = o_matrix_avg - e_matrix_avg
+            measurement_matrix.append(single_diff_matrix[0, :])
 
     # Convert to numpy arrays
     if measurements:  # Check if measurements is not empty
@@ -477,12 +483,12 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
     else:
         raise ValueError("Measurement matrix is empty. Check input parameters and calculations.")
 
-    if observable == "single_difference":
-        # Modify measurements for inversion
-        measurements = measurements - measurement_matrix[:, 0]
+    # if observable == "single_difference":
+    #     # Modify measurements for inversion
+    #     measurements = measurements - measurement_matrix[:, 0]
 
-        # Modify matrix for inversion
-        measurement_matrix[:, 0] = 1
+    #     # Modify matrix for inversion
+    #     measurement_matrix[:, 0] = 1
 
     if not include_V:
         measurement_matrix = measurement_matrix[:, :-1]
