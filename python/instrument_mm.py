@@ -5,7 +5,9 @@ import angles
 import numpy as np
 
 def MODHIS_full_system_mm(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0, 
-    wollaston_beam = 'o', TMT_matrix_noise = 0, NFIRAOS_matrix_noise = 0, MODHIS_matrix_noise = 0):
+    delta_HWP_ang = 0, wollaston_beam = 'o', TMT_matrix_noise = 0, 
+    NFIRAOS_matrix_noise = 0, MODHIS_matrix_noise = 0, HWP_noise_value = 0, 
+    HWP_noise_type = 0, matrix_noise_type = "multiplicative"):
     """
     Returns the Mueller matrix of M3 with rotation.
 
@@ -18,6 +20,7 @@ def MODHIS_full_system_mm(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0,
         TMT_matrix_noise: (float) % noise added to all Mueller matrix elements for TMT mirrors
         NFIRAOS_matrix_noise: (float) % noise added to all Mueller matrix elements for NFIRAOS
         MODHIS_matrix_noise: (float) % noise added to all Mueller matrix elements for MODHIS
+        HWP_retardance: (float) retardance of HWP in waves
     """
 
     # Parallactic angle rotation
@@ -26,7 +29,8 @@ def MODHIS_full_system_mm(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0,
 
     # All telescope mirrors
     TMT = cmm.ArbitraryMatrix(name = "TMT")
-    TMT.properties['mm'] = TMT_matrix(TMT_matrix_noise = TMT_matrix_noise)
+    TMT.properties['mm'] = TMT_matrix(TMT_matrix_noise = TMT_matrix_noise, 
+        matrix_noise_type = matrix_noise_type)
 
      # TODO: Verify if this is positive or negative
     # Altitude angle rotation
@@ -37,14 +41,23 @@ def MODHIS_full_system_mm(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0,
     hwp = cmm.Retarder(name = 'hwp') 
     hwp.properties['phi'] = delta_HWP * 2 * np.pi
     hwp.properties['theta'] = HWP_ang
+    hwp.properties['delta_theta'] = delta_HWP_ang
+
+    # Adding HWP noise
+    if HWP_noise_type == "multiplicative":
+        delta_HWP = delta_HWP * (1 + HWP_noise_value)
+    elif HWP_noise_type == "additive":
+        delta_HWP += HWP_noise_value
 
     # NFIRAOS matrix
     NFIRAOS = cmm.ArbitraryMatrix(name = "NFIRAOS")
-    NFIRAOS.properties['mm'] = NFIRAOS_matrix(NFIRAOS_matrix_noise = NFIRAOS_matrix_noise)
+    NFIRAOS.properties['mm'] = NFIRAOS_matrix(NFIRAOS_matrix_noise = NFIRAOS_matrix_noise,
+        matrix_noise_type = matrix_noise_type)
 
     # MODHIS matrix
     MODHIS = cmm.ArbitraryMatrix(name = "MODHIS")
-    MODHIS.properties['mm'] = MODHIS_matrix(MODHIS_matrix_noise = MODHIS_matrix_noise)
+    MODHIS.properties['mm'] = MODHIS_matrix(MODHIS_matrix_noise = MODHIS_matrix_noise,
+        matrix_noise_type = matrix_noise_type)
 
     wollaston = cmm.WollastonPrism()
     wollaston.properties['beam'] = wollaston_beam
@@ -121,13 +134,13 @@ def vary_full_system_mm(mueller_matrix, noise_percentage=0):
     
     return varied_mueller_matrix
 
-def propagate_on_sky_source(Q = 0, U = 0, inst_matrix = np.identity(4)):
+def propagate_on_sky_source(Q = 0, U = 0, V = 0, inst_matrix = np.identity(4)):
     # TODO: Add this functionality to input AOLP and % pol in the future
     # Q, U from the input Stokes parameters
     # Q, U = funcs.deg_pol_and_aolp_to_stokes(1, theta_pol)
 
     # Assumed that I is 1 and V is 0
-    input_stokes = np.array([1, Q, U, 0]).reshape(-1, 1)
+    input_stokes = np.array([1, Q, U, V]).reshape(-1, 1)
     output_stokes = inst_matrix @ input_stokes
     return output_stokes
 
@@ -372,22 +385,36 @@ def calculate_Q_and_U_observing_sequence(ra=0, dec=0, observer_latitude=20.0, ob
 
 def calculate_input_Q_U_observing_sequence_matrix_inversion(
         ra=0, dec=0, observer_latitude=20.0, observer_longitude=-155.5, 
-        jd_str="2451545.0", ut_start="00:00:00", t_int=60, 
-        Q=0, U=0, delta_HWP=0.5, noise_percentage=1, include_V=True, 
-        sub_tint=None, use_sum=False, matrix_noise=0, hour_angle=None,
-        TMT_matrix_noise=0, NFIRAOS_matrix_noise=0, MODHIS_matrix_noise=0,
-        observable="intensities"):
-
-    HWP_angs = np.array([0, 45, 22.5, 67.5])
+        jd_str="2451545.0", ut_start="00:00:00", t_int=60.0, 
+        Q=0, U=0, V=0, HWP_angs = np.array([0, 45, 22.5, 67.5]), delta_HWP=0.5, 
+        noise_percentage=1, include_V=True, sub_tint=None, sampled_steps = 0, 
+        use_sum=False, matrix_noise=0, hour_angle=None, TMT_matrix_noise=0, 
+        NFIRAOS_matrix_noise=0, MODHIS_matrix_noise=0, HWP_noise = 0, 
+        delta_HWP_ang = 0, HWP_noise_type = "multiplicative", 
+        matrix_noise_type = "multiplicative", observable="intensities"):
+    # NOTE: The noise values are expressed as percentages
     measurements = []
     measurement_matrix = []
+
+    # Generating random HWP noise value
+    HWP_noise_value = np.random.normal(0, HWP_noise / 100)
 
     # Making noise matrices
     TMT_noise_matrix = np.random.normal(0, TMT_matrix_noise / 100, (4, 4))
     NFIRAOS_noise_matrix = np.random.normal(0, NFIRAOS_matrix_noise / 100, (4, 4))
     MODHIS_noise_matrix = np.random.normal(0, MODHIS_matrix_noise / 100, (4, 4))
 
-    sub_tint = sub_tint or t_int
+    # Zero-ing out IP for additive noise
+    if matrix_noise_type == "additive":
+        TMT_noise_matrix[:, 0] = 0
+        NFIRAOS_noise_matrix[:, 0] = 0
+        MODHIS_noise_matrix[:, 0] = 0
+
+    if sampled_steps > 0:
+        sub_tint = t_int / sampled_steps
+    else:
+        sub_tint = sub_tint or t_int
+    
     num_sub_intervals = int(np.ceil(t_int / sub_tint))
 
     for HWP_ang in HWP_angs:
@@ -448,16 +475,23 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
         avg_pa = np.mean(sub_pa)
         avg_altitude = np.mean(sub_altitude)
 
+        # Matrices used for reconstruction
         o_matrix_avg, _ = MODHIS_full_system_mm(pa=avg_pa, 
-            altitude=avg_altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, 
+            altitude=avg_altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, delta_HWP_ang = delta_HWP_ang,
             wollaston_beam="o", TMT_matrix_noise=TMT_noise_matrix, 
             NFIRAOS_matrix_noise=NFIRAOS_noise_matrix, 
-            MODHIS_matrix_noise=MODHIS_noise_matrix)
+            MODHIS_matrix_noise=MODHIS_noise_matrix, 
+            matrix_noise_type = matrix_noise_type, 
+            HWP_noise_value = HWP_noise_value,
+            HWP_noise_type = HWP_noise_type)
         e_matrix_avg, _ = MODHIS_full_system_mm(pa=avg_pa, altitude=avg_altitude, 
-            delta_HWP=delta_HWP, HWP_ang=HWP_ang, wollaston_beam="e", 
-            TMT_matrix_noise=TMT_noise_matrix, 
+            delta_HWP=delta_HWP, HWP_ang=HWP_ang, delta_HWP_ang = delta_HWP_ang,
+            wollaston_beam="e", TMT_matrix_noise=TMT_noise_matrix, 
             NFIRAOS_matrix_noise=NFIRAOS_noise_matrix, 
-            MODHIS_matrix_noise=MODHIS_noise_matrix)
+            MODHIS_matrix_noise=MODHIS_noise_matrix,
+            matrix_noise_type = matrix_noise_type,
+            HWP_noise_value = HWP_noise_value,
+            HWP_noise_type = HWP_noise_type)
 
         if observable == "intensities":
             measurement_matrix.append(o_matrix_avg[0, :])
@@ -465,11 +499,12 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
         elif observable == "normalized_single_difference":
             single_diff_matrix = o_matrix_avg - e_matrix_avg
             single_sum_matrix = o_matrix_avg + e_matrix_avg
+            # NOTE: Comment all this out unless working with double differences rather than intensities
             # print("single_difference_matrix ", single_sum_matrix)
             # print("single_sum_matrix ", single_sum_matrix)
-            if single_sum_matrix[0, 0] != 0:  # Prevent division by zero
-                # single_diff_matrix[0, 0] = 1
-                single_diff_matrix[0, :] /= single_sum_matrix[0, 0]
+            # if single_sum_matrix[0, 0] != 0:  # Prevent division by zero
+            #     # single_diff_matrix[0, 0] = 1
+            #     single_diff_matrix[0, :] /= single_sum_matrix[0, 0]
             measurement_matrix.append(single_diff_matrix[0, :])
         elif observable == "unnormalized_single_difference":
             single_diff_matrix = o_matrix_avg - e_matrix_avg
@@ -496,32 +531,192 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
     inverted_s_in = np.linalg.pinv(measurement_matrix) @ measurements
     return inverted_s_in
 
-def TMT_matrix(TMT_matrix_noise = 0):
+def calculate_input_Q_U_V_observing_sequence_matrix_inversion(
+        ra=0, dec=0, observer_latitude=20.0, observer_longitude=-155.5, 
+        jd_str="2451545.0", ut_start="00:00:00", t_int=60.0, 
+        Q=0, U=0, V=0, delta_HWP=0.5, noise_percentage=1, include_V=True, 
+        sub_tint=None, sampled_steps = 0, use_sum=False, matrix_noise=0, hour_angle=None,
+        TMT_matrix_noise=0, NFIRAOS_matrix_noise=0, MODHIS_matrix_noise=0, 
+        HWP_noise = 0, delta_HWP_ang = 0, HWP_noise_type = "multiplicative",
+        matrix_noise_type = "multiplicative", observable="intensities"):
+    # NOTE: The noise values are expressed as percentages
+    HWP_angs = np.array([0, 45, 22.5, 67.5])
+    measurements = []
+    measurement_matrix = []
+
+    # Generating random HWP noise value
+    HWP_noise_value = np.random.normal(0, HWP_noise / 100)
+
+    # Making noise matrices
+    TMT_noise_matrix = np.random.normal(0, TMT_matrix_noise / 100, (4, 4))
+    NFIRAOS_noise_matrix = np.random.normal(0, NFIRAOS_matrix_noise / 100, (4, 4))
+    MODHIS_noise_matrix = np.random.normal(0, MODHIS_matrix_noise / 100, (4, 4))
+
+    # Zero-ing out IP for additive noise
+    if matrix_noise_type == "additive":
+        TMT_noise_matrix[:, 0] = 0
+        NFIRAOS_noise_matrix[:, 0] = 0
+        MODHIS_noise_matrix[:, 0] = 0
+
+    if sampled_steps > 0:
+        sub_tint = t_int / sampled_steps
+    else:
+        sub_tint = sub_tint or t_int
+    
+    num_sub_intervals = int(np.ceil(t_int / sub_tint))
+
+    for HWP_ang in HWP_angs:
+        sub_measurements_o, sub_measurements_e, sub_measurements = [], [], []
+        sub_pa, sub_altitude = [], []
+
+        for sub_interval in range(num_sub_intervals):
+            sub_ut_start_seconds = (int(ut_start[:2]) * 3600 + int(ut_start[3:5]) * 60 + int(ut_start[6:])) + sub_interval * sub_tint
+            sub_ut_start = f"{int(sub_ut_start_seconds // 3600):02}:{int((sub_ut_start_seconds % 3600) // 60):02}:{int(sub_ut_start_seconds % 60):02}"
+
+            # Calculate angles and matrices
+            if hour_angle is None:
+                pa = angles.calculate_parallactic_angle(
+                    ra=ra, dec=dec, ut=sub_ut_start, jd_str=jd_str,
+                    observer_latitude=observer_latitude, observer_longitude=observer_longitude)
+                altitude = angles.calculate_altitude(
+                    phi=observer_latitude, delta=dec,
+                    H=angles.calculate_hour_angle(ra=ra, observer_longitude=observer_longitude, ut=sub_ut_start, jd_str=jd_str))
+            else:
+                H_degrees = hour_angle * 15.0
+                pa = angles.calculate_parallactic_angle(
+                    dec=dec, hour_angle=hour_angle,
+                    observer_latitude=observer_latitude, observer_longitude=observer_longitude)
+                altitude = angles.calculate_altitude(phi=observer_latitude, delta=dec, H=H_degrees)
+
+            # Adding sub angles to the existing list
+            sub_pa.append(pa)
+            sub_altitude.append(altitude)
+
+            o_matrix, _ = MODHIS_full_system_mm(pa=pa, altitude=altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, wollaston_beam="o")
+            e_matrix, _ = MODHIS_full_system_mm(pa=pa, altitude=altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, wollaston_beam="e")
+
+            o_stokes = propagate_on_sky_source(Q=Q, U=U, inst_matrix=o_matrix)
+            e_stokes = propagate_on_sky_source(Q=Q, U=U, inst_matrix=e_matrix)
+            o_intensity = o_stokes[0][0]
+            e_intensity = e_stokes[0][0]
+
+            if observable == "intensities":
+                sub_measurements_o.append(o_intensity)
+                sub_measurements_e.append(e_intensity)
+            elif observable == "normalized_single_difference":
+                single_diff = (o_intensity - e_intensity) / (o_intensity + e_intensity)
+                sub_measurements.append(single_diff)
+            elif observable == "unnormalized_single_difference":
+                single_diff = (o_intensity - e_intensity)
+                sub_measurements.append(single_diff)
+
+        if observable == "intensities":
+            intensity_o = np.sum(sub_measurements_o) if use_sum else np.mean(sub_measurements_o)
+            intensity_e = np.sum(sub_measurements_e) if use_sum else np.mean(sub_measurements_e)
+            measurements.append(intensity_o)
+            measurements.append(intensity_e)
+        elif "single_difference" in observable:
+            if sub_measurements:  # Check to ensure list isn't empty
+                single_diff_avg = np.sum(sub_measurements) if use_sum else np.mean(sub_measurements)
+                measurements.append(single_diff_avg)
+
+        avg_pa = np.mean(sub_pa)
+        avg_altitude = np.mean(sub_altitude)
+
+        # Matrices used for reconstruction
+        o_matrix_avg, _ = MODHIS_full_system_mm(pa=avg_pa, 
+            altitude=avg_altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, delta_HWP_ang = delta_HWP_ang,
+            wollaston_beam="o", TMT_matrix_noise=TMT_noise_matrix, 
+            NFIRAOS_matrix_noise=NFIRAOS_noise_matrix, 
+            MODHIS_matrix_noise=MODHIS_noise_matrix, 
+            matrix_noise_type = matrix_noise_type, 
+            HWP_noise_value = HWP_noise_value,
+            HWP_noise_type = HWP_noise_type)
+        e_matrix_avg, _ = MODHIS_full_system_mm(pa=avg_pa, altitude=avg_altitude, 
+            delta_HWP=delta_HWP, HWP_ang=HWP_ang, delta_HWP_ang = delta_HWP_ang,
+            wollaston_beam="e", TMT_matrix_noise=TMT_noise_matrix, 
+            NFIRAOS_matrix_noise=NFIRAOS_noise_matrix, 
+            MODHIS_matrix_noise=MODHIS_noise_matrix,
+            matrix_noise_type = matrix_noise_type,
+            HWP_noise_value = HWP_noise_value,
+            HWP_noise_type = HWP_noise_type)
+
+        if observable == "intensities":
+            measurement_matrix.append(o_matrix_avg[0, :])
+            measurement_matrix.append(e_matrix_avg[0, :])
+        elif observable == "normalized_single_difference":
+            single_diff_matrix = o_matrix_avg - e_matrix_avg
+            single_sum_matrix = o_matrix_avg + e_matrix_avg
+            # NOTE: Comment all this out unless working with double differences rather than intensities
+            # print("single_difference_matrix ", single_sum_matrix)
+            # print("single_sum_matrix ", single_sum_matrix)
+            # if single_sum_matrix[0, 0] != 0:  # Prevent division by zero
+            #     # single_diff_matrix[0, 0] = 1
+            #     single_diff_matrix[0, :] /= single_sum_matrix[0, 0]
+            measurement_matrix.append(single_diff_matrix[0, :])
+        elif observable == "unnormalized_single_difference":
+            single_diff_matrix = o_matrix_avg - e_matrix_avg
+            measurement_matrix.append(single_diff_matrix[0, :])
+
+    # Convert to numpy arrays
+    if measurements:  # Check if measurements is not empty
+        measurements = np.array(measurements) * (1 + np.random.normal(0, noise_percentage / 100))
+    if measurement_matrix:  # Check if measurement_matrix is not empty
+        measurement_matrix = np.vstack(measurement_matrix)
+    else:
+        raise ValueError("Measurement matrix is empty. Check input parameters and calculations.")
+
+    # if observable == "single_difference":
+    #     # Modify measurements for inversion
+    #     measurements = measurements - measurement_matrix[:, 0]
+
+    #     # Modify matrix for inversion
+    #     measurement_matrix[:, 0] = 1
+
+    if not include_V:
+        measurement_matrix = measurement_matrix[:, :-1]
+
+    inverted_s_in = np.linalg.pinv(measurement_matrix) @ measurements
+    return inverted_s_in
+
+def TMT_matrix(TMT_matrix_noise = 0, matrix_noise_type = "multiplicative"):
     M_TMT = np.array([
     [0.998, 0, 0.002, 0],
     [0, 0.954, 0, -0.295],
     [0.002, 0, 0.998, 0],
     [0, 0.295, 0, 0.954]
 ])
-    M_TMT = M_TMT *  (1 + TMT_matrix_noise)
+    if matrix_noise_type == "multiplicative":
+        M_TMT = M_TMT *  (1 + TMT_matrix_noise)
+    elif matrix_noise_type == "additive":
+        M_TMT = M_TMT + TMT_matrix_noise
+
     return M_TMT
 
-def NFIRAOS_matrix(NFIRAOS_matrix_noise = 0):
+def NFIRAOS_matrix(NFIRAOS_matrix_noise = 0, matrix_noise_type = "multiplicative"):
     M_NFIRAOS = np.array([
     [0.98, 0.02, 0, 0],
     [0.02, 0.98, 0, 0],
     [0, 0, 0.98, -0.03],
     [0, 0, 0.03, 0.98]
 ])
-    M_NFIRAOS = M_NFIRAOS *  (1 + NFIRAOS_matrix_noise)
+    if matrix_noise_type == "multiplicative":
+        M_NFIRAOS = M_NFIRAOS *  (1 + NFIRAOS_matrix_noise)
+    elif matrix_noise_type == "additive":
+        M_NFIRAOS = M_NFIRAOS + NFIRAOS_matrix_noise
+
     return M_NFIRAOS
 
-def MODHIS_matrix(MODHIS_matrix_noise = 0):
+def MODHIS_matrix(MODHIS_matrix_noise = 0, matrix_noise_type = "multiplicative"):
     M_MODHIS = np.array([
     [0.999, 0.001, 0, 0],
     [0.001, 0.999, 0, 0],
     [0, 0, 0.9816, -0.1857],
     [0, 0, 0.0857, 0.9816]
 ])
-    M_MODHIS = M_MODHIS *  (1 + MODHIS_matrix_noise)
+    if matrix_noise_type == "multiplicative":
+        M_MODHIS = M_MODHIS *  (1 + MODHIS_matrix_noise)
+    elif matrix_noise_type == "additive":
+        M_MODHIS = M_MODHIS + MODHIS_matrix_noise
+
     return M_MODHIS
