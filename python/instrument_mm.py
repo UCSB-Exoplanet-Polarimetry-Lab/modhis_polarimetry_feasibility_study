@@ -37,17 +37,17 @@ def MODHIS_full_system_mm(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0,
     alt_rot = cmm.Rotator(name = "altitude")
     alt_rot.properties['pa'] = altitude
 
-    # HWP for differencing - assumed to be before NFIRAOS
-    hwp = cmm.Retarder(name = 'hwp') 
-    hwp.properties['phi'] = delta_HWP * 2 * np.pi
-    hwp.properties['theta'] = HWP_ang
-    hwp.properties['delta_theta'] = delta_HWP_ang
-
     # Adding HWP noise
     if HWP_noise_type == "multiplicative":
         delta_HWP = delta_HWP * (1 + HWP_noise_value)
     elif HWP_noise_type == "additive":
         delta_HWP += HWP_noise_value
+
+    # HWP for differencing - assumed to be before NFIRAOS
+    hwp = cmm.Retarder(name = 'hwp') 
+    hwp.properties['phi'] = delta_HWP * 2 * np.pi
+    hwp.properties['theta'] = HWP_ang
+    hwp.properties['delta_theta'] = delta_HWP_ang
 
     # NFIRAOS matrix
     NFIRAOS = cmm.ArbitraryMatrix(name = "NFIRAOS")
@@ -266,7 +266,6 @@ def calculate_input_Q_U_intensities_matrix_inversion(Q=0, U=0, pa=0, altitude=0,
 
     return inverted_s_in
 
-
 def calculate_Q_and_U_observing_sequence(ra=0, dec=0, observer_latitude=20.0, observer_longitude=-155.5, 
                                          jd_str="2451545.0", ut_start="00:00:00", t_int=60, Q=0, U=0, delta_HWP=0.5):
     """
@@ -391,10 +390,12 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
         use_sum=False, matrix_noise=0, hour_angle=None, TMT_matrix_noise=0, 
         NFIRAOS_matrix_noise=0, MODHIS_matrix_noise=0, HWP_noise = 0, 
         delta_HWP_ang = 0, HWP_noise_type = "multiplicative", 
-        matrix_noise_type = "multiplicative", observable="intensities"):
+        matrix_noise_type = "multiplicative", observable="intensities",
+        normalize_s_out = False, return_type = "stokes"):
     # NOTE: The noise values are expressed as percentages
     measurements = []
     measurement_matrix = []
+    normalized_single_diffs_list = []
 
     # Generating random HWP noise value
     HWP_noise_value = np.random.normal(0, HWP_noise / 100)
@@ -447,8 +448,8 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
             o_matrix, _ = MODHIS_full_system_mm(pa=pa, altitude=altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, wollaston_beam="o")
             e_matrix, _ = MODHIS_full_system_mm(pa=pa, altitude=altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, wollaston_beam="e")
 
-            o_stokes = propagate_on_sky_source(Q=Q, U=U, inst_matrix=o_matrix)
-            e_stokes = propagate_on_sky_source(Q=Q, U=U, inst_matrix=e_matrix)
+            o_stokes = propagate_on_sky_source(Q = Q, U = U, V = V, inst_matrix = o_matrix)
+            e_stokes = propagate_on_sky_source(Q = Q, U = U, V = V, inst_matrix = e_matrix)
             o_intensity = o_stokes[0][0]
             e_intensity = e_stokes[0][0]
 
@@ -493,6 +494,22 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
             HWP_noise_value = HWP_noise_value,
             HWP_noise_type = HWP_noise_type)
 
+        # print("HWP Angle: " + str(HWP_ang))
+        # print("o_avg Mueller Matrix: " + str(o_matrix_avg))
+        # print("e_avg Mueller Matrix: " + str(e_matrix_avg))
+
+        o_stokes_avg = propagate_on_sky_source(Q=Q, U=U, V=V, inst_matrix=o_matrix_avg)
+        e_stokes_avg = propagate_on_sky_source(Q=Q, U=U, V=V, inst_matrix=e_matrix_avg)
+        o_intensity_avg = o_stokes_avg[0][0]
+        e_intensity_avg = e_stokes_avg[0][0]
+        normalized_single_diff_avg = \
+            (o_intensity_avg - e_intensity_avg) / (o_intensity_avg + e_intensity_avg)
+        normalized_single_diffs_list.append(normalized_single_diff_avg)
+
+        # print("o_stokes_avg: " + str(o_stokes_avg))
+        # print("e_stokes_avg: " + str(e_stokes_avg))
+        # print("Normalized Single Diff Avg: " + str(normalized_single_diff_avg))
+
         if observable == "intensities":
             measurement_matrix.append(o_matrix_avg[0, :])
             measurement_matrix.append(e_matrix_avg[0, :])
@@ -529,7 +546,16 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
         measurement_matrix = measurement_matrix[:, :-1]
 
     inverted_s_in = np.linalg.pinv(measurement_matrix) @ measurements
-    return inverted_s_in
+    
+    if normalize_s_out:
+        inverted_s_in = inverted_s_in / inverted_s_in[0]
+
+    if return_type == "stokes":
+        inverted_s_in = np.linalg.pinv(measurement_matrix) @ measurements
+        return inverted_s_in
+    elif return_type == "normalized_diff":
+        normalized_single_diffs_list = np.array(normalized_single_diffs_list)
+        return normalized_single_diffs_list
 
 def calculate_input_Q_U_V_observing_sequence_matrix_inversion(
         ra=0, dec=0, observer_latitude=20.0, observer_longitude=-155.5, 
@@ -538,10 +564,12 @@ def calculate_input_Q_U_V_observing_sequence_matrix_inversion(
         sub_tint=None, sampled_steps = 0, use_sum=False, matrix_noise=0, hour_angle=None,
         TMT_matrix_noise=0, NFIRAOS_matrix_noise=0, MODHIS_matrix_noise=0, 
         HWP_noise = 0, delta_HWP_ang = 0, HWP_noise_type = "multiplicative",
-        matrix_noise_type = "multiplicative", observable="intensities"):
+        matrix_noise_type = "multiplicative", observable="intensities", return_type = "stokes"):
+    # NOTE: Return type can now toggled to be either Stokes parameters or single differences
     # NOTE: The noise values are expressed as percentages
     HWP_angs = np.array([0, 45, 22.5, 67.5])
     measurements = []
+    normalized_single_diffs_list = []
     measurement_matrix = []
 
     # Generating random HWP noise value
@@ -595,8 +623,8 @@ def calculate_input_Q_U_V_observing_sequence_matrix_inversion(
             o_matrix, _ = MODHIS_full_system_mm(pa=pa, altitude=altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, wollaston_beam="o")
             e_matrix, _ = MODHIS_full_system_mm(pa=pa, altitude=altitude, delta_HWP=delta_HWP, HWP_ang=HWP_ang, wollaston_beam="e")
 
-            o_stokes = propagate_on_sky_source(Q=Q, U=U, inst_matrix=o_matrix)
-            e_stokes = propagate_on_sky_source(Q=Q, U=U, inst_matrix=e_matrix)
+            o_stokes = propagate_on_sky_source(Q=Q, U=U, V=V, inst_matrix=o_matrix)
+            e_stokes = propagate_on_sky_source(Q=Q, U=U, V=V, inst_matrix=e_matrix)
             o_intensity = o_stokes[0][0]
             e_intensity = e_stokes[0][0]
 
@@ -641,6 +669,14 @@ def calculate_input_Q_U_V_observing_sequence_matrix_inversion(
             HWP_noise_value = HWP_noise_value,
             HWP_noise_type = HWP_noise_type)
 
+        o_stokes_avg = propagate_on_sky_source(Q=Q, U=U, V=V, inst_matrix=o_matrix_avg)
+        e_stokes_avg = propagate_on_sky_source(Q=Q, U=U, V=V, inst_matrix=e_matrix_avg)
+        o_intensity_avg = o_stokes_avg[0][0]
+        e_intensity_avg = e_stokes_avg[0][0]
+        normalized_single_diff_avg = \
+            (o_intensity_avg - e_intensity_avg) / (o_intensity_avg + e_intensity_avg)
+        normalized_single_diffs_list.append(normalized_single_diff_avg)
+
         if observable == "intensities":
             measurement_matrix.append(o_matrix_avg[0, :])
             measurement_matrix.append(e_matrix_avg[0, :])
@@ -676,8 +712,12 @@ def calculate_input_Q_U_V_observing_sequence_matrix_inversion(
     if not include_V:
         measurement_matrix = measurement_matrix[:, :-1]
 
-    inverted_s_in = np.linalg.pinv(measurement_matrix) @ measurements
-    return inverted_s_in
+    if return_type == "stokes":
+        inverted_s_in = np.linalg.pinv(measurement_matrix) @ measurements
+        return inverted_s_in
+    elif return_type == "normalized_diff":
+        normalized_single_diffs_list = np.array(normalized_single_diffs_list)
+        return normalized_single_diffs_list
 
 def TMT_matrix(TMT_matrix_noise = 0, matrix_noise_type = "multiplicative"):
     M_TMT = np.array([
