@@ -72,6 +72,123 @@ def MODHIS_full_system_mm(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0,
 
     return inst_matrix, wollaston_and_HWP_matrix
 
+def MODHIS_no_wollaston_or_rotations(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0, 
+    delta_HWP_ang = 0, wollaston_beam = 'o', TMT_matrix_noise = 0, 
+    NFIRAOS_matrix_noise = 0, MODHIS_matrix_noise = 0, HWP_noise_value = 0, 
+    HWP_noise_type = 0, matrix_noise_type = "multiplicative"):
+    """
+    Returns the Mueller matrix of M3 with rotation.
+
+    Args:
+        delta_m3: (float) retardance of M3 (waves)
+        epsilon_m3: (float) diattenuation of M3
+        parang: (float) parallactic angle (degrees)
+        altitude: (float) altitude angle in header (degrees)
+        offset: (float) offset angle of M3 (degrees) - fit from M3 diattenuation fits
+        TMT_matrix_noise: (float) % noise added to all Mueller matrix elements for TMT mirrors
+        NFIRAOS_matrix_noise: (float) % noise added to all Mueller matrix elements for NFIRAOS
+        MODHIS_matrix_noise: (float) % noise added to all Mueller matrix elements for MODHIS
+        HWP_retardance: (float) retardance of HWP in waves
+    """
+
+    # All telescope mirrors
+    TMT = cmm.ArbitraryMatrix(name = "TMT")
+    TMT.properties['mm'] = TMT_matrix(TMT_matrix_noise = TMT_matrix_noise, 
+        matrix_noise_type = matrix_noise_type)
+
+    # Adding HWP noise
+    if HWP_noise_type == "multiplicative":
+        delta_HWP = delta_HWP * (1 + HWP_noise_value)
+    elif HWP_noise_type == "additive":
+        delta_HWP += HWP_noise_value
+
+    # HWP for differencing - assumed to be before NFIRAOS
+    hwp = cmm.Retarder(name = 'hwp') 
+    hwp.properties['phi'] = delta_HWP * 2 * np.pi
+    hwp.properties['theta'] = HWP_ang
+    hwp.properties['delta_theta'] = delta_HWP_ang
+
+    # NFIRAOS matrix
+    NFIRAOS = cmm.ArbitraryMatrix(name = "NFIRAOS")
+    NFIRAOS.properties['mm'] = NFIRAOS_matrix(NFIRAOS_matrix_noise = NFIRAOS_matrix_noise,
+        matrix_noise_type = matrix_noise_type)
+
+    # MODHIS matrix
+    MODHIS = cmm.ArbitraryMatrix(name = "MODHIS")
+    MODHIS.properties['mm'] = MODHIS_matrix(MODHIS_matrix_noise = MODHIS_matrix_noise,
+        matrix_noise_type = matrix_noise_type)
+
+    wollaston = cmm.WollastonPrism()
+    wollaston.properties['beam'] = wollaston_beam
+    
+    sys_mm = MuellerMat.SystemMuellerMatrix([MODHIS, NFIRAOS, hwp, TMT])
+    inst_matrix = sys_mm.evaluate()
+
+    return inst_matrix
+
+def HWP_only(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0, 
+    delta_HWP_ang = 0, wollaston_beam = 'o', TMT_matrix_noise = 0, 
+    NFIRAOS_matrix_noise = 0, MODHIS_matrix_noise = 0, HWP_noise_value = 0, 
+    HWP_noise_type = 0, matrix_noise_type = "multiplicative"):
+    """
+    Returns the Mueller matrix of M3 with rotation.
+
+    Args:
+        delta_m3: (float) retardance of M3 (waves)
+        epsilon_m3: (float) diattenuation of M3
+        parang: (float) parallactic angle (degrees)
+        altitude: (float) altitude angle in header (degrees)
+        offset: (float) offset angle of M3 (degrees) - fit from M3 diattenuation fits
+        TMT_matrix_noise: (float) % noise added to all Mueller matrix elements for TMT mirrors
+        NFIRAOS_matrix_noise: (float) % noise added to all Mueller matrix elements for NFIRAOS
+        MODHIS_matrix_noise: (float) % noise added to all Mueller matrix elements for MODHIS
+        HWP_retardance: (float) retardance of HWP in waves
+    """
+
+    # HWP for differencing - assumed to be before NFIRAOS
+    hwp = cmm.Retarder(name = 'hwp') 
+    hwp.properties['phi'] = delta_HWP * 2 * np.pi
+    hwp.properties['theta'] = HWP_ang
+    hwp.properties['delta_theta'] = delta_HWP_ang
+    
+    sys_mm = MuellerMat.SystemMuellerMatrix([hwp])
+    inst_matrix = sys_mm.evaluate()
+
+    return inst_matrix
+
+def HWP_and_wollaston_only(pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0, 
+    delta_HWP_ang = 0, wollaston_beam = 'o', TMT_matrix_noise = 0, 
+    NFIRAOS_matrix_noise = 0, MODHIS_matrix_noise = 0, HWP_noise_value = 0, 
+    HWP_noise_type = 0, matrix_noise_type = "multiplicative"):
+    """
+    Returns the Mueller matrix of M3 with rotation.
+
+    Args:
+        delta_m3: (float) retardance of M3 (waves)
+        epsilon_m3: (float) diattenuation of M3
+        parang: (float) parallactic angle (degrees)
+        altitude: (float) altitude angle in header (degrees)
+        offset: (float) offset angle of M3 (degrees) - fit from M3 diattenuation fits
+        TMT_matrix_noise: (float) % noise added to all Mueller matrix elements for TMT mirrors
+        NFIRAOS_matrix_noise: (float) % noise added to all Mueller matrix elements for NFIRAOS
+        MODHIS_matrix_noise: (float) % noise added to all Mueller matrix elements for MODHIS
+        HWP_retardance: (float) retardance of HWP in waves
+    """
+
+    # HWP for differencing - assumed to be before NFIRAOS
+    hwp = cmm.Retarder(name = 'hwp') 
+    hwp.properties['phi'] = delta_HWP * 2 * np.pi
+    hwp.properties['theta'] = HWP_ang
+    hwp.properties['delta_theta'] = delta_HWP_ang
+    
+    wollaston = cmm.WollastonPrism()
+    wollaston.properties['beam'] = wollaston_beam
+
+    sys_mm = MuellerMat.SystemMuellerMatrix([wollaston, hwp])
+    inst_matrix = sys_mm.evaluate()
+
+    return inst_matrix
+
 # def full_system_mm_single_diff(
 #     pa = 0, altitude = 0, delta_HWP = 0.5, HWP_ang = 0, TMT_matrix_noise = 0, 
 #     NFIRAOS_matrix_noise = 0, MODHIS_matrix_noise = 0 factor = 1,
@@ -529,7 +646,7 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
 
     # Convert to numpy arrays
     if measurements:  # Check if measurements is not empty
-        measurements = np.array(measurements) * (1 + np.random.normal(0, noise_percentage / 100))
+        measurements = np.array(measurements) * (1 + np.random.normal(0, noise_percentage / 100, size=len(measurements)))
     if measurement_matrix:  # Check if measurement_matrix is not empty
         measurement_matrix = np.vstack(measurement_matrix)
     else:
@@ -545,13 +662,11 @@ def calculate_input_Q_U_observing_sequence_matrix_inversion(
     if not include_V:
         measurement_matrix = measurement_matrix[:, :-1]
 
-    inverted_s_in = np.linalg.pinv(measurement_matrix) @ measurements
-    
-    if normalize_s_out:
-        inverted_s_in = inverted_s_in / inverted_s_in[0]
-
     if return_type == "stokes":
         inverted_s_in = np.linalg.pinv(measurement_matrix) @ measurements
+        if normalize_s_out:
+            inverted_s_in = inverted_s_in / inverted_s_in[0]
+            print("Normalized inverted_s_in: " + str(inverted_s_in))
         return inverted_s_in
     elif return_type == "normalized_diff":
         normalized_single_diffs_list = np.array(normalized_single_diffs_list)
@@ -696,7 +811,7 @@ def calculate_input_Q_U_V_observing_sequence_matrix_inversion(
 
     # Convert to numpy arrays
     if measurements:  # Check if measurements is not empty
-        measurements = np.array(measurements) * (1 + np.random.normal(0, noise_percentage / 100))
+        measurements = np.array(measurements) * (1 + np.random.normal(0, noise_percentage / 100, size=len(measurements)))
     if measurement_matrix:  # Check if measurement_matrix is not empty
         measurement_matrix = np.vstack(measurement_matrix)
     else:
