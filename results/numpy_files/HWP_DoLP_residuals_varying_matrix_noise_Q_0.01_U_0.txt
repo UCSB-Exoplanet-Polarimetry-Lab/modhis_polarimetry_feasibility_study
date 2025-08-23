@@ -1,6 +1,6 @@
-matrix_noise, mean_residual, std_residual, target_name, target_ra, target_dec
-1, 0.00016070, 0.00010397, Hamal, 31.791, 23.462
-2, 0.00033893, 0.00022956, Hamal, 31.791, 23.462
-3, 0.00044254, 0.00034858, Hamal, 31.791, 23.462
-4, 0.00063258, 0.00048495, Hamal, 31.791, 23.462
-5, 0.00077068, 0.00049749, Hamal, 31.791, 23.462
+QWP_V_residuals_varying_matrix_noise_Q_0_U_0_V_0.01.matrix_noise, mean_residual, std_residual, target_name, target_ra, target_dec
+1, 0.00016016, 0.00011613, Hamal, 31.791, 23.462
+2, 0.00032104, 0.00025415, Hamal, 31.791, 23.462
+3, 0.00047648, 0.00030965, Hamal, 31.791, 23.462
+4, 0.00053207, 0.00040554, Hamal, 31.791, 23.462
+5, 0.00077815, 0.00055609, Hamal, 31.791, 23.462
